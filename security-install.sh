@@ -5,9 +5,9 @@
 
 set -e
 
-echo "🛡️ Instalando CrowdSec en Sangoma 7..."
+echo "🛡️ Instalando CrowdSec en Sangoma 7 con sincronización personalizada..."
 
-# Paso 1: Agregar repo manualmente (como CentOS 7)
+# Paso 1: Agregar repo de CrowdSec (para CentOS 7)
 cat <<EOF | sudo tee /etc/yum.repos.d/crowdsec.repo
 [crowdsec]
 name=crowdsec
@@ -21,7 +21,7 @@ sslcacert=/etc/pki/tls/certs/ca-bundle.crt
 metadata_expire=300
 EOF
 
-# Paso 2: Instalar CrowdSec y el bouncer
+# Paso 2: Instalar CrowdSec y bouncer
 yum clean all
 yum makecache
 yum install -y crowdsec crowdsec-firewall-bouncer-iptables
@@ -35,30 +35,41 @@ systemctl enable --now crowdsec-firewall-bouncer
 mkdir -p /var/lib/crowdsec/exports
 mkdir -p /var/lib/crowdsec/imports
 
-# Paso 5: Crear script exportador
+# Paso 5: Script exportador con puertos SSH personalizados
 cat <<'EOF' > /usr/local/bin/exportar_baneos.sh
 #!/bin/bash
 EXPORT_DIR="/var/lib/crowdsec/exports"
 mkdir -p "$EXPORT_DIR"
 FILENAME="$EXPORT_DIR/banlist-$(hostname)-$(date +%Y%m%d%H%M).json"
 cscli decisions export -o json > "$FILENAME"
-DESTINOS=("10.42.96.3" "10.42.96.4" "10.42.96.6" "10.42.96.7")
+
+# Mapa de IPs y sus puertos SSH personalizados
+declare -A DESTINOS
+DESTINOS["10.42.96.3"]=26057    # dedicated12
+DESTINOS["10.42.96.4"]=26057    # mercurio (este nodo)
+DESTINOS["10.42.96.6"]=49365    # soho1
+DESTINOS["10.42.96.7"]=49365    # dedicated11
+
 IP_LOCAL=$(hostname -I | awk '{print $1}')
-for NODE in "${DESTINOS[@]}"; do
+
+for NODE in "${!DESTINOS[@]}"; do
     if [[ "$NODE" != "$IP_LOCAL" ]]; then
-        scp -o StrictHostKeyChecking=no "$FILENAME" root@$NODE:/var/lib/crowdsec/imports/
+        PORT="${DESTINOS[$NODE]}"
+        echo "➡️ Enviando baneos a $NODE:$PORT"
+        scp -P "$PORT" -o StrictHostKeyChecking=no "$FILENAME" root@$NODE:/var/lib/crowdsec/imports/
     fi
 done
 EOF
 
 chmod +x /usr/local/bin/exportar_baneos.sh
 
-# Paso 6: Crear script importador
+# Paso 6: Script importador
 cat <<'EOF' > /usr/local/bin/importar_baneos.sh
 #!/bin/bash
 IMPORT_DIR="/var/lib/crowdsec/imports"
 for FILE in $IMPORT_DIR/banlist-*.json; do
     [ -f "$FILE" ] || continue
+    echo "⬅️ Importando $FILE"
     cscli decisions import -i "$FILE"
     rm -f "$FILE"
 done
@@ -66,7 +77,7 @@ EOF
 
 chmod +x /usr/local/bin/importar_baneos.sh
 
-# Paso 7: Crear cronjob central
+# Paso 7: Cronjob para sincronización
 cat <<EOF > /etc/cron.d/crowdsec-sync
 */5 * * * * root /usr/local/bin/exportar_baneos.sh
 */5 * * * * root /usr/local/bin/importar_baneos.sh
@@ -74,5 +85,5 @@ EOF
 
 chmod 644 /etc/cron.d/crowdsec-sync
 
-echo "✅ CrowdSec instalado y sincronización habilitada entre nodos."
-echo "📌 Asegúrate de distribuir claves SSH entre los nodos para permitir scp sin contraseña."
+echo "✅ CrowdSec instalado y sincronización con puertos personalizados lista."
+echo "📌 Recuerda asegurarte de que los puertos estén abiertos y que SSH esté accesible en cada nodo."
