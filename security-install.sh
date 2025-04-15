@@ -1,13 +1,10 @@
-##########--->AJTEL COMUNICACIONES MEXICO<-----
-##########--->INSTALACION DE SISTEMA DE SEGURIDAD INTERNO PARA RED XVLAN<-----
-
 #!/bin/bash
 
 set -e
 
-echo "🛡️ Instalando CrowdSec en Sangoma 7 con sincronización personalizada..."
+echo "🛡️ Instalando CrowdSec en Sangoma 7 con sincronización por IP pública..."
 
-# Paso 1: Agregar repo de CrowdSec (para CentOS 7)
+# Paso 1: Agregar repo de CrowdSec (para CentOS 7/Sangoma 7)
 cat <<EOF | sudo tee /etc/yum.repos.d/crowdsec.repo
 [crowdsec]
 name=crowdsec
@@ -35,28 +32,33 @@ systemctl enable --now crowdsec-firewall-bouncer
 mkdir -p /var/lib/crowdsec/exports
 mkdir -p /var/lib/crowdsec/imports
 
-# Paso 5: Script exportador con puertos SSH personalizados
+# Paso 5: Script exportador actualizado
 cat <<'EOF' > /usr/local/bin/exportar_baneos.sh
 #!/bin/bash
+
 EXPORT_DIR="/var/lib/crowdsec/exports"
 mkdir -p "$EXPORT_DIR"
 FILENAME="$EXPORT_DIR/banlist-$(hostname)-$(date +%Y%m%d%H%M).json"
+
+# Exportar IPs baneadas en formato JSON
 cscli decisions export -o json > "$FILENAME"
 
-# Mapa de IPs y sus puertos SSH personalizados
+# Mapa de IPs públicas y puertos SSH personalizados
 declare -A DESTINOS
-DESTINOS["10.42.96.3"]=26057    # dedicated12
-DESTINOS["10.42.96.4"]=26057    # mercurio (este nodo)
-DESTINOS["10.42.96.6"]=49365    # soho1
-DESTINOS["10.42.96.7"]=49365    # dedicated11
+DESTINOS["216.238.91.96"]=26057    # dedicated12
+DESTINOS["216.238.86.33"]=26057    # mercurio
+DESTINOS["216.238.89.117"]=49365   # soho1
+DESTINOS["216.238.76.209"]=49365   # dedicated11
 
-IP_LOCAL=$(hostname -I | awk '{print $1}')
+IP_LOCAL=$(curl -s https://ipinfo.io/ip)
 
 for NODE in "${!DESTINOS[@]}"; do
     if [[ "$NODE" != "$IP_LOCAL" ]]; then
         PORT="${DESTINOS[$NODE]}"
         echo "➡️ Enviando baneos a $NODE:$PORT"
         scp -P "$PORT" -o StrictHostKeyChecking=no "$FILENAME" root@$NODE:/var/lib/crowdsec/imports/
+    else
+        echo "🛑 Saltando IP local $NODE ($PORT)"
     fi
 done
 EOF
@@ -66,6 +68,7 @@ chmod +x /usr/local/bin/exportar_baneos.sh
 # Paso 6: Script importador
 cat <<'EOF' > /usr/local/bin/importar_baneos.sh
 #!/bin/bash
+
 IMPORT_DIR="/var/lib/crowdsec/imports"
 for FILE in $IMPORT_DIR/banlist-*.json; do
     [ -f "$FILE" ] || continue
@@ -85,5 +88,5 @@ EOF
 
 chmod 644 /etc/cron.d/crowdsec-sync
 
-echo "✅ CrowdSec instalado y sincronización con puertos personalizados lista."
-echo "📌 Recuerda asegurarte de que los puertos estén abiertos y que SSH esté accesible en cada nodo."
+echo "✅ CrowdSec instalado y sincronización por IP pública activa."
+echo "📌 Asegúrate de que los puertos SSH estén abiertos entre nodos y se hayan distribuido las claves con ssh-copy-id."
