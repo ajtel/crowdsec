@@ -133,31 +133,6 @@ for NODE in "${!DESTINOS[@]}"; do
     PORT="${DESTINOS[$NODE]}"
     if [[ "$NODE" != "$IP_LOCAL" ]]; then
         echo "📤 Enviando whitelist a $NODE:$PORT"
-        scp -P "$PORT" -o StrictHostKeyChecking=no "$WHITELIST" root@$NODE:"$REMOTE_PATH"
-        ssh -p "$PORT" root@$NODE "systemctl restart crowdsec"
-        grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' "$WHITELIST" | while read ip; do
-          ssh -p "$PORT" root@$NODE "cscli decisions delete --ip $ip >/dev/null 2>&1"
-        done
-        echo "✅ Whitelist sincronizada en $NODE"
-    fi
-done
-EOF
-chmod +x /usr/local/bin/sync_whitelist.sh
-
-# Paso 11: Cronjobs
-cat <<EOF > /etc/cron.d/crowdsec-ajtel
-*/5 * * * * root /usr/local/bin/exportar_baneos.sh
-*/5 * * * * root /usr/local/bin/importar_baneos.sh
-15 * * * * root /usr/local/bin/importar-iptables-estaticas.sh
-30 * * * * root /usr/local/bin/limpiar_ips_whitelist.sh
-45 * * * * root /usr/local/bin/sync_whitelist.sh
-EOF
-chmod 644 /etc/cron.d/crowdsec-ajtel
-
-# 🎉 Final
-echo ""
-echo "✅ Instalación y sincronización completa de seguridad AJTEL"
-echo "🔐 Claves SSH deben estar listas entre nodos"
-echo "📦 Archivos de IPtables importados"
-echo "🔁 Whitelist protegida y sincronizada"
-echo "⏱️ Revisa logs y usa '/usr/local/bin/verificar_sync.sh' para checar estado"
+        scp
+::contentReference[oaicite:9]{index=9}
+ 
